@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: word-by-word
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MAX_TOKENS
+        sync: false
+      - key: MAX_REWRITES
+        sync: false
+      - key: PROMPT_STYLE
+        sync: false

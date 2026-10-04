@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word by Word</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Andika&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #faf3e3;
+    --card: #ffffff;
+    --ink: #3b3228;
+    --soft: #8a7d6b;
+    --accent: #e8843c;
+    --accent-dark: #c96a26;
+    --green: #3f9d63;
+    --amber: #d99a26;
+    --red: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: "Andika", system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 680px; margin: 0 auto; padding: 12px 16px 60px; }
+  header { text-align: center; padding: 18px 12px 6px; }
+  header h1 { margin: 0; font-size: 34px; color: var(--accent-dark); }
+  header p { margin: 4px 0 0; color: var(--soft); }
+  .card {
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: 0 3px 10px rgba(59, 50, 40, 0.08);
+    padding: 18px 20px;
+    margin-top: 18px;
+  }
+  .card h2 { margin: 0 0 12px; font-size: 22px; color: var(--accent-dark); }
+  label.field { display: block; margin: 12px 0; font-size: 15px; color: var(--soft); }
+  label.field input, label.field select {
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+    padding: 10px 12px;
+    font-size: 17px;
+    font-family: inherit;
+    border: 2px solid #e8ddc9;
+    border-radius: 12px;
+    background: #fffdf8;
+    color: var(--ink);
+  }
+  label.field input:focus, label.field select:focus { outline: none; border-color: var(--accent); }
+  button.primary {
+    width: 100%;
+    margin-top: 14px;
+    padding: 13px 16px;
+    font-size: 19px;
+    font-family: inherit;
+    font-weight: bold;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+  }
+  button.primary:hover { background: var(--accent-dark); }
+  button.primary:disabled { opacity: 0.6; cursor: wait; }
+  button.secondary {
+    padding: 11px 16px;
+    font-size: 16px;
+    font-family: inherit;
+    color: #fff;
+    background: var(--green);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row button.primary { width: auto; flex: 1; }
+  .slider-row { display: flex; align-items: center; gap: 12px; margin: 12px 0; color: var(--soft); font-size: 15px; }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+  #sentVal { font-size: 20px; color: var(--ink); font-weight: bold; min-width: 22px; text-align: center; }
+  .badge {
+    display: inline-block;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+  .badge.ok { background: #e2f3e8; color: var(--green); }
+  .badge.warn { background: #f9edd2; color: var(--amber); }
+  #printHeader { display: none; }
+  #storyText {
+    font-size: 30px;
+    line-height: 1.8;
+  }
+  #storyText .sentence { margin-bottom: 8px; }
+  .story-word { cursor: pointer; border-radius: 6px; padding: 0 2px; }
+  .story-word:hover { background: #f4e8d2; }
+  .story-word.new-word { font-weight: bold; }
+  .story-word.bad-word { color: var(--red); text-decoration: underline wavy; }
+  .story-word.clicked { background: var(--accent); color: #fff; }
+  .story-actions { margin-top: 16px; }
+  .hint { font-size: 14px; color: var(--soft); margin: 8px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 12px;
+    font-size: 16px;
+    font-family: inherit;
+    background: #f4ead6;
+    border: 2px solid #e8ddc9;
+    border-radius: 999px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .chip input { accent-color: var(--accent); margin: 0; }
+  .chip.selected { background: var(--accent); border-color: var(--accent-dark); color: #fff; }
+  .chip .x { margin-left: 4px; font-weight: bold; opacity: 0.6; }
+  .chip:hover { border-color: var(--accent); }
+  #placementPanel h3 { margin: 14px 0 2px; font-size: 17px; color: var(--ink); }
+  #questionsBox .qcard {
+    background: #f7f0df;
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-top: 10px;
+    cursor: pointer;
+    font-size: 19px;
+  }
+  #questionsBox .answer { display: none; margin-top: 6px; color: var(--green); font-size: 18px; }
+  #questionsBox .qcard.open .answer { display: block; }
+  #status {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 16px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    z-index: 10;
+  }
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #errorBox {
+    background: #fdecea;
+    color: var(--red);
+    border: 2px solid #f5c6bd;
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-top: 14px;
+    font-size: 16px;
+  }
+  @media print {
+    body { background: #fff; }
+    main { max-width: none; padding: 0; }
+    header, #setupCard, #storyCard, #status, #errorBox { display: none !important; }
+    #outputCard { display: block !important; box-shadow: none; margin-top: 0; }
+    #badge, .story-actions, #questionsBox { display: none !important; }
+    #printHeader { display: block !important; font-size: 28px; margin-bottom: 20px; }
+    #storyText { font-size: 34px; line-height: 1.9; }
+    .story-word { cursor: default; }
+    .story-word:hover { background: none; }
+  }
+</style>
+</head>
+<body>
+<header class="no-print">
+  <h1>Word by Word</h1>
+  <p>Reading practice with words you already know</p>
+</header>
+<main>
+  <section class="card" id="setupCard">
+    <h2>Who is reading?</h2>
+    <label class="field">Child's name
+      <input id="childName" maxlength="20" placeholder="e.g. Asha" autocomplete="off">
+    </label>
+    <label class="field">Pet's name (optional)
+      <input id="petName" maxlength="20" placeholder="e.g. Moti" autocomplete="off">
+    </label>
+    <label class="field">Reading level
+      <select id="level">
+        <option value="1">Level 1 - first words</option>
+        <option value="2">Level 2</option>
+        <option value="3">Level 3</option>
+        <option value="4">Level 4</option>
+        <option value="5">Level 5</option>
+      </select>
+    </label>
+    <button class="primary" id="findLevelBtn">Find my level</button>
+    <div id="placementPanel" hidden></div>
+  </section>
+
+  <section class="card" id="storyCard">
+    <h2>Write a story</h2>
+    <label class="field">Pick a topic
+      <select id="topicSelect"></select>
+    </label>
+    <label class="field">Or type your own topic
+      <input id="topicText" maxlength="200" placeholder="e.g. a snowman in the garden" autocomplete="off">
+    </label>
+    <div class="slider-row">
+      <span>Sentences</span>
+      <input type="range" id="sentences" min="4" max="10" value="6">
+      <span id="sentVal">6</span>
+    </div>
+    <label class="field">New words to practice (up to 3)
+      <input id="newWords" placeholder="e.g. giant village happy" autocomplete="off">
+    </label>
+    <div id="stuckWrap" hidden>
+      <p class="hint">Stuck words from before - tap one to practice it in the next story:</p>
+      <div class="chips" id="stuckChips"></div>
+    </div>
+    <button class="primary" id="writeBtn">Write story</button>
+  </section>
+
+  <div id="errorBox" hidden></div>
+
+  <section class="card" id="outputCard" hidden>
+    <div id="badge"></div>
+    <div id="printHeader">A story for <span id="printName"></span></div>
+    <div id="storyText"></div>
+    <div class="story-actions">
+      <button class="secondary" id="questionsBtn">Questions</button>
+      <button class="secondary" id="printBtn">Print</button>
+    </div>
+    <div id="questionsBox" hidden></div>
+  </section>
+</main>
+
+<div id="status" hidden>
+  <div class="spinner"></div>
+  <span id="statusText"></span>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var PROFILE_KEY = "wordbyword_profile";
+  var profile = loadProfile();
+  var currentStory = null;
+
+  var el = function (id) { return document.getElementById(id); };
+
+  function loadProfile() {
+    try {
+      return JSON.parse(localStorage.getItem(PROFILE_KEY)) || {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveProfile(patch) {
+    var p = {};
+    try { p = JSON.parse(localStorage.getItem(PROFILE_KEY)) || {}; } catch (err) {}
+    Object.keys(patch).forEach(function (k) { p[k] = patch[k]; });
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+    profile = p;
+  }
+
+  function showStatus(msg) {
+    el("statusText").textContent = msg;
+    el("status").hidden = false;
+    el("writeBtn").disabled = true;
+    el("findLevelBtn").disabled = true;
+  }
+
+  function hideStatus() {
+    el("status").hidden = true;
+    el("writeBtn").disabled = false;
+    el("findLevelBtn").disabled = false;
+  }
+
+  var errorTimer = null;
+  function showError(msg) {
+    var box = el("errorBox");
+    box.textContent = msg;
+    box.hidden = false;
+    if (errorTimer) clearTimeout(errorTimer);
+    errorTimer = setTimeout(function () { box.hidden = true; }, 6000);
+  }
+
+  function renderStuck() {
+    var wrap = el("stuckWrap");
+    var chips = el("stuckChips");
+    chips.innerHTML = "";
+    var stuck = profile.stuck || [];
+    if (!stuck.length) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    stuck.forEach(function (word) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip";
+      chip.dataset.word = word;
+      var label = document.createElement("span");
+      label.textContent = word;
+      var x = document.createElement("span");
+      x.className = "x";
+      x.textContent = "×";
+      x.title = "Remove";
+      chip.appendChild(label);
+      chip.appendChild(x);
+      chip.addEventListener("click", function (ev) {
+        if (ev.target === x) {
+          saveProfile({ stuck: (profile.stuck || []).filter(function (w) { return w !== word; }) });
+          renderStuck();
+          return;
+        }
+        chip.classList.toggle("selected");
+      });
+      chips.appendChild(chip);
+    });
+  }
+
+  function loadTopics() {
+    fetch("/api/topics")
+      .then(function (res) { return res.json(); })
+      .then(function (topics) {
+        var select = el("topicSelect");
+        select.innerHTML = "";
+        topics.forEach(function (topic) {
+          var opt = document.createElement("option");
+          opt.value = topic;
+          opt.textContent = topic;
+          select.appendChild(opt);
+        });
+      })
+      .catch(function () {
+        var select = el("topicSelect");
+        var opt = document.createElement("option");
+        opt.value = "a happy day";
+        opt.textContent = "a happy day";
+        select.appendChild(opt);
+      });
+  }
+
+  function collectNewWords() {
+    var manual = el("newWords").value
+      .split(/[\s,]+/)
+      .map(function (w) { return w.trim().toLowerCase(); })
+      .filter(Boolean);
+    var selected = Array.prototype.map.call(
+      document.querySelectorAll("#stuckChips .chip.selected"),
+      function (chip) { return chip.dataset.word; }
+    );
+    var out = [];
+    manual.concat(selected).forEach(function (w) {
+      if (out.indexOf(w) === -1) out.push(w);
+    });
+    return out.slice(0, 3);
+  }
+
+  function findLevel() {
+    showStatus("Loading words...");
+    var groups = [];
+    var chain = Promise.resolve();
+    [1, 2, 3, 4, 5].forEach(function (lv) {
+      chain = chain.then(function () {
+        return fetch("/api/placement/" + lv).then(function (res) {
+          if (!res.ok) throw new Error("Could not load the level words.");
+          return res.json();
+        }).then(function (data) {
+          groups.push({ level: lv, words: data.words });
+        });
+      });
+    });
+    chain
+      .then(function () {
+        renderPlacement(groups);
+      })
+      .catch(function (err) {
+        showError(err.message || "Something went wrong. Please try again.");
+      })
+      .finally(hideStatus);
+  }
+
+  function renderPlacement(groups) {
+    var panel = el("placementPanel");
+    panel.innerHTML = "";
+    var intro = document.createElement("p");
+    intro.className = "hint";
+    intro.textContent = "Tick every word you can read. We will find your level.";
+    panel.appendChild(intro);
+    groups.forEach(function (g) {
+      var h = document.createElement("h3");
+      h.textContent = "Level " + g.level;
+      panel.appendChild(h);
+      var row = document.createElement("div");
+      row.className = "chips";
+      g.words.forEach(function (word) {
+        var label = document.createElement("label");
+        label.className = "chip";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = word;
+        cb.dataset.level = g.level;
+        cb.addEventListener("change", updatePlacementHint);
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(" " + word));
+        row.appendChild(label);
+      });
+      panel.appendChild(row);
+    });
+    var hint = document.createElement("p");
+    hint.className = "hint";
+    hint.id = "placementHint";
+    panel.appendChild(hint);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "primary";
+    btn.textContent = "Use my level";
+    btn.addEventListener("click", applyPlacement);
+    panel.appendChild(btn);
+    panel.hidden = false;
+    updatePlacementHint();
+  }
+
+  function bestPlacementLevel() {
+    var counts = {};
+    document.querySelectorAll("#placementPanel input[type=checkbox]:checked").forEach(function (cb) {
+      counts[cb.dataset.level] = (counts[cb.dataset.level] || 0) + 1;
+    });
+    var best = 1;
+    [1, 2, 3, 4, 5].forEach(function (lv) {
+      if ((counts[lv] || 0) >= 8) best = lv;
+    });
+    return best;
+  }
+
+  function updatePlacementHint() {
+    var hint = el("placementHint");
+    if (!hint) return;
+    hint.textContent = "Tick at least 8 words in a level. Your level looks like " + bestPlacementLevel() + ".";
+  }
+
+  function applyPlacement() {
+    var best = bestPlacementLevel();
+    el("level").value = String(best);
+    saveProfile({ level: best });
+    var panel = el("placementPanel");
+    var msg = document.createElement("p");
+    msg.className = "hint";
+    msg.textContent = "Level set to " + best + ". You can change it any time.";
+    panel.insertBefore(msg, panel.firstChild.nextSibling);
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function renderStory(story, newWords, badWords) {
+    var box = el("storyText");
+    box.innerHTML = "";
+    var parts = story.match(/[^.!?\n]+[.!?]*/g) || [story];
+    parts.map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (sentence) {
+      var div = document.createElement("div");
+      div.className = "sentence";
+      var re = /[A-Za-z]+(?:'[A-Za-z]+)?/g;
+      var last = 0;
+      var m;
+      while ((m = re.exec(sentence)) !== null) {
+        if (m.index > last) {
+          div.appendChild(document.createTextNode(sentence.slice(last, m.index)));
+        }
+        var span = document.createElement("span");
+        span.className = "story-word";
+        var w = m[0].toLowerCase();
+        if (newWords.indexOf(w) !== -1) span.classList.add("new-word");
+        if (badWords.indexOf(w) !== -1) span.classList.add("bad-word");
+        span.textContent = m[0];
+        span.dataset.word = w;
+        div.appendChild(span);
+        last = m.index + m[0].length;
+      }
+      if (last < sentence.length) {
+        div.appendChild(document.createTextNode(sentence.slice(last)));
+      }
+      box.appendChild(div);
+    });
+  }
+
+  function writeStory() {
+    var child = el("childName").value.trim();
+    if (!child) {
+      showError("Please tell us the child's name first.");
+      el("childName").focus();
+      return;
+    }
+    var pet = el("petName").value.trim();
+    var level = parseInt(el("level").value, 10);
+    var newWords = collectNewWords();
+    var topic = el("topicText").value.trim() || el("topicSelect").value || "a happy day";
+    var nSentences = parseInt(el("sentences").value, 10);
+    saveProfile({ child: child, pet: pet, level: level });
+
+    el("outputCard").hidden = true;
+    el("questionsBox").hidden = true;
+    showStatus("Writing your story...");
+    fetch("/api/story", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        level: level,
+        child_name: child,
+        pet_name: pet,
+        new_words: newWords,
+        topic: topic,
+        n_sentences: nSentences
+      })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.detail || "The story service is busy. Please try again.");
+          return data;
+        });
+      })
+      .then(function (data) {
+        currentStory = { story: data.story, level: level, newWords: newWords };
+        var badge = el("badge");
+        if (data.ok) {
+          badge.className = "badge ok";
+          badge.textContent = "Every word checked for level " + level +
+            " (fixed in " + data.attempts + (data.attempts === 1 ? " try)" : " tries)");
+        } else {
+          badge.className = "badge warn";
+          badge.textContent = "Some words may be hard";
+        }
+        el("printName").textContent = child;
+        renderStory(data.story, newWords, data.report.bad_words || []);
+        el("questionsBtn").disabled = false;
+        el("printBtn").disabled = false;
+        el("outputCard").hidden = false;
+        el("outputCard").scrollIntoView({ behavior: "smooth", block: "start" });
+      })
+      .catch(function (err) {
+        showError(err.message || "Something went wrong. Please try again.");
+      })
+      .finally(hideStatus);
+  }
+
+  function makeQuestions() {
+    if (!currentStory) return;
+    showStatus("Thinking of questions...");
+    el("questionsBox").hidden = true;
+    fetch("/api/questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        story: currentStory.story,
+        level: currentStory.level,
+        child_name: el("childName").value.trim(),
+        pet_name: el("petName").value.trim(),
+        new_words: currentStory.newWords
+      })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.detail || "Could not make questions. Please try again.");
+          return data;
+        });
+      })
+      .then(function (questions) {
+        if (!questions.length) throw new Error("Could not make questions. Please try again.");
+        renderQuestions(questions);
+      })
+      .catch(function (err) {
+        showError(err.message || "Something went wrong. Please try again.");
+      })
+      .finally(hideStatus);
+  }
+
+  function renderQuestions(questions) {
+    var box = el("questionsBox");
+    box.innerHTML = "";
+    questions.forEach(function (item) {
+      var card = document.createElement("div");
+      card.className = "qcard";
+      var q = document.createElement("div");
+      q.textContent = item.q;
+      var a = document.createElement("div");
+      a.className = "answer";
+      a.textContent = item.a;
+      card.appendChild(q);
+      card.appendChild(a);
+      card.addEventListener("click", function () {
+        card.classList.toggle("open");
+      });
+      box.appendChild(card);
+    });
+    box.hidden = false;
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  el("storyText").addEventListener("click", function (ev) {
+    var span = ev.target.closest(".story-word");
+    if (!span) return;
+    var word = span.dataset.word;
+    var stuck = profile.stuck || [];
+    if (stuck.indexOf(word) === -1) {
+      stuck.push(word);
+      saveProfile({ stuck: stuck });
+      renderStuck();
+    }
+    span.classList.add("clicked");
+    setTimeout(function () { span.classList.remove("clicked"); }, 400);
+  });
+
+  el("sentences").addEventListener("input", function () {
+    el("sentVal").textContent = el("sentences").value;
+  });
+
+  el("findLevelBtn").addEventListener("click", findLevel);
+  el("writeBtn").addEventListener("click", writeStory);
+  el("questionsBtn").addEventListener("click", makeQuestions);
+  el("questionsBtn").disabled = true;
+  el("printBtn").addEventListener("click", function () {
+    window.print();
+  });
+  el("printBtn").disabled = true;
+
+  el("childName").value = profile.child || "";
+  el("petName").value = profile.pet || "";
+  if (profile.level) el("level").value = String(profile.level);
+  el("childName").addEventListener("change", function () {
+    saveProfile({ child: el("childName").value.trim() });
+  });
+  el("petName").addEventListener("change", function () {
+    saveProfile({ pet: el("petName").value.trim() });
+  });
+
+  renderStuck();
+  loadTopics();
+})();
+</script>
+</body>
+</html>
