@@ -229,19 +229,33 @@ try:
 except ValueError:
     _RATE_LIMIT = 20
 _hits: dict[str, deque] = defaultdict(deque)
+_LAST_PRUNE = 0.0
 
 
 def _client_ip(request: Request) -> str:
+    # Trust only the RIGHTMOST X-Forwarded-For entry: our reverse proxy
+    # (Render) APPENDS the real client IP, while anything to the left was
+    # sent by the client itself and can be spoofed. Falling back to the
+    # direct socket IP when no proxy header exists (local dev).
     fwd = request.headers.get("x-forwarded-for", "")
     if fwd:
-        return fwd.split(",")[0].strip()
+        return fwd.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
 def _rate_limited(request: Request) -> bool:
-    if len(_hits) > 5000:
-        _hits.clear()
+    global _LAST_PRUNE
     now = time.monotonic()
+    # Prune stale buckets periodically instead of clearing everything, so a
+    # flood of unique IPs cannot flush the limiter and reset everyone's quota.
+    if len(_hits) > 5000 and now - _LAST_PRUNE > 60:
+        for ip in [
+            ip
+            for ip, h in _hits.items()
+            if not h or now - h[-1] > 60
+        ]:
+            _hits.pop(ip, None)
+        _LAST_PRUNE = now
     hits = _hits[_client_ip(request)]
     while hits and now - hits[0] > 60:
         hits.popleft()
