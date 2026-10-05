@@ -3,12 +3,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 from . import levels
 from .llm import LLMError, generate_questions, generate_story
+from .tts import TTSError, synthesize_speech
 
 load_dotenv()
 
@@ -23,25 +24,26 @@ _NEW_WORD_RE = re.compile(r"^[A-Za-z]+$")
 
 
 class StoryRequest(BaseModel):
-    level: int
+    level: int | None = None
     child_name: str
     pet_name: str = ""
     new_words: list[str] = []
+    known_words: list[str] = []
     topic: str = ""
     n_sentences: int = 6
 
     @field_validator("level")
     @classmethod
-    def check_level(cls, v: int) -> int:
-        if not 1 <= v <= 5:
+    def check_level(cls, v: int | None) -> int | None:
+        if v is not None and not 1 <= v <= 5:
             raise ValueError("level must be between 1 and 5")
         return v
 
     @field_validator("n_sentences")
     @classmethod
     def check_n_sentences(cls, v: int) -> int:
-        if not 4 <= v <= 10:
-            raise ValueError("n_sentences must be between 4 and 10")
+        if not 4 <= v <= 120:
+            raise ValueError("n_sentences must be between 4 and 120")
         return v
 
     @field_validator("new_words")
@@ -53,6 +55,16 @@ class StoryRequest(BaseModel):
             if not _NEW_WORD_RE.fullmatch(word):
                 raise ValueError("new words must use letters only")
         return v
+
+    @field_validator("known_words")
+    @classmethod
+    def check_known_words(cls, v: list[str]) -> list[str]:
+        if len(v) > 300:
+            raise ValueError("at most 300 known words")
+        for word in v:
+            if not _NEW_WORD_RE.fullmatch(word):
+                raise ValueError("known words must use letters only")
+        return [w.strip().lower() for w in v if w.strip()]
 
     @field_validator("child_name", "pet_name")
     @classmethod
@@ -74,10 +86,20 @@ class StoryRequest(BaseModel):
 
 class QuestionsRequest(BaseModel):
     story: str
-    level: int
+    level: int | None = None
     child_name: str
     pet_name: str = ""
     new_words: list[str] = []
+    known_words: list[str] = []
+    learning_goal: str = ""
+    n_questions: int = 3
+
+    @field_validator("n_questions")
+    @classmethod
+    def check_n_questions(cls, v: int) -> int:
+        if not 1 <= v <= 12:
+            raise ValueError("n_questions must be between 1 and 12")
+        return v
 
     @field_validator("story")
     @classmethod
@@ -88,8 +110,8 @@ class QuestionsRequest(BaseModel):
 
     @field_validator("level")
     @classmethod
-    def check_level(cls, v: int) -> int:
-        if not 1 <= v <= 5:
+    def check_level(cls, v: int | None) -> int | None:
+        if v is not None and not 1 <= v <= 5:
             raise ValueError("level must be between 1 and 5")
         return v
 
@@ -102,6 +124,16 @@ class QuestionsRequest(BaseModel):
             if not _NEW_WORD_RE.fullmatch(word):
                 raise ValueError("new words must use letters only")
         return v
+
+    @field_validator("known_words")
+    @classmethod
+    def check_known_words(cls, v: list[str]) -> list[str]:
+        if len(v) > 300:
+            raise ValueError("at most 300 known words")
+        for word in v:
+            if not _NEW_WORD_RE.fullmatch(word):
+                raise ValueError("known words must use letters only")
+        return [w.strip().lower() for w in v if w.strip()]
 
     @field_validator("child_name", "pet_name")
     @classmethod
@@ -126,6 +158,11 @@ def topics():
     return [line.strip() for line in TOPICS_FILE.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
 
 
+@app.get("/api/wordbank")
+def wordbank():
+    return {"tiers": [dict(t) for t in levels.word_bank()]}
+
+
 @app.get("/api/placement/{level}")
 def placement(level: int):
     if not 1 <= level <= 5:
@@ -135,9 +172,10 @@ def placement(level: int):
 
 @app.post("/api/story")
 def story(req: StoryRequest):
+    level = req.level if req.level is not None else levels.infer_level(req.known_words)
     try:
         return generate_story(
-            req.level,
+            level,
             req.child_name,
             req.pet_name,
             req.new_words,
@@ -150,13 +188,16 @@ def story(req: StoryRequest):
 
 @app.post("/api/questions")
 def questions(req: QuestionsRequest):
+    level = req.level if req.level is not None else levels.infer_level(req.known_words)
     try:
         return generate_questions(
             req.story,
-            req.level,
+            level,
             req.child_name,
             req.pet_name,
             req.new_words,
+            learning_goal=req.learning_goal,
+            n_questions=req.n_questions,
         )
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
@@ -165,6 +206,29 @@ def questions(req: QuestionsRequest):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def check_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("text must not be empty")
+        if len(v) > 6000:
+            raise ValueError("text must be at most 6000 characters")
+        return v
+
+
+@app.post("/api/tts")
+def tts(req: TTSRequest):
+    try:
+        audio = synthesize_speech(req.text)
+    except TTSError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")

@@ -73,3 +73,40 @@ def placement_words(level: int) -> list[str]:
         new_words = sorted(current)
     rng = random.Random(42)
     return rng.sample(new_words, min(10, len(new_words)))
+
+
+# ---------------------------------------------------------------- word bank --
+# Checkbox-based assessment: the parent ticks the words the child can read.
+
+TIER_DEFS = [
+    (1, "First words", 16),
+    (2, "Grade 1", 14),
+    (3, "Grade 2", 12),
+    (4, "Grade 3", 10),
+    (5, "Everyday reader", 12),
+]
+
+
+@lru_cache(maxsize=None)
+def word_bank() -> tuple[dict, ...]:
+    """Deterministic sample of words per tier for the 'words they know' check."""
+    tiers: list[dict] = []
+    prev = frozenset()
+    for tier, name, n in TIER_DEFS:
+        pool = sorted(allowed_words(tier) - prev)
+        pool = [w for w in pool if 2 <= len(w) <= 10 and "'" not in w]
+        rng = random.Random(100 + tier)
+        words = rng.sample(pool, min(n, len(pool)))
+        tiers.append({"tier": tier, "name": name, "words": words})
+        prev = allowed_words(tier)
+    return tuple(tiers)
+
+
+def infer_level(known_words) -> int:
+    """Map the ticked words to the reading level the app should use."""
+    known = {str(w).strip().lower() for w in (known_words or []) if str(w).strip()}
+    for tier in (5, 4, 3, 2):
+        sample = next((t["words"] for t in word_bank() if t["tier"] == tier), [])
+        if sample and sum(1 for w in sample if w in known) / len(sample) >= 0.5:
+            return tier
+    return 1

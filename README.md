@@ -3,10 +3,11 @@
 A FastAPI web app that writes short reading-practice stories for **one child** (age 5-10)
 using **only words that child can already read**.
 
-You pick the child's reading level (or use the in-app placement check), and the app asks any
+You pick the child's reading level (or use the in-app placement check), and the app asks an
 OpenAI-compatible model for a story, then verifies every word against that level's word list.
 Words that are too hard or sentences that are too long are sent back to the model for a rewrite
-(up to 3 tries). The child never sees a word the checker did not approve without a warning.
+(one rewrite by default, configurable with `MAX_REWRITES`). The child never sees a word the
+checker did not approve without a warning.
 
 ## How it works
 
@@ -17,9 +18,12 @@ Words that are too hard or sentences that are too long are sent back to the mode
   tokenizes, splits sentences, and reports bad words / long sentences / in-list rate.
   Simple inflections (plural, -ed, -ing, -er, doubled consonants, dropped e) are allowed
   from level 2. Possessive `'s` is allowed at every level.
-- **LLM** (`app/llm.py`) - prompts use the literal words CHILD and PET, so real names never
-  reach the model; names are swapped in afterwards. If the checker fails the draft, the draft
-  plus a rewrite message are sent back at a lower temperature (max 3 rewrites). Thinking
+- **LLM** (`app/llm.py`) - works with any OpenAI-compatible API. This build uses
+  **Cloudflare Workers AI** with the open model `@cf/google/gemma-4-26b-a4b-it` (Gemma 4,
+  Apache 2.0 weights served on Workers AI). Prompts use the placeholder names MINU (child)
+  and PIP (pet), so the child's real name never reaches the model; the real names are
+  swapped in locally afterwards. If the checker fails the draft, the draft plus a rewrite
+  message are sent back at a lower temperature (`MAX_REWRITES` tries, default 1). Thinking
   blocks are stripped from model output. Reading-comprehension questions are generated the
   same way and checked too.
 - **UI** (`app/static/index.html`) - one vanilla HTML/CSS/JS page with a placement check,
@@ -39,18 +43,39 @@ Open http://127.0.0.1:8000
 
 ### Configuration (`.env`)
 
-| Key             | Meaning                                        |
-| --------------- | ---------------------------------------------- |
-| `LLM_BASE_URL`  | OpenAI-compatible API base URL                 |
-| `LLM_MODEL`     | Model name                                     |
-| `LLM_API_KEY`   | API key (never logged, never sent to the user) |
-| `PROMPT_STYLE`  | `full` (default) or `short`                    |
+| Key              | Meaning                                          |
+| ---------------- | ------------------------------------------------ |
+| `LLM_BASE_URL`   | OpenAI-compatible API base URL                   |
+| `LLM_MODEL`      | Model name                                       |
+| `LLM_API_KEY`    | API key (never logged, never sent to the user)   |
+| `LLM_MAX_TOKENS` | Max completion tokens per call (default `1000`)  |
+| `MAX_REWRITES`   | Rewrite attempts when the checker fails (default `1`) |
+| `PROMPT_STYLE`   | `full` (default) or `short`                      |
+
+Example Cloudflare Workers AI configuration:
+
+```env
+LLM_BASE_URL=https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/ai/v1
+LLM_MODEL=@cf/google/gemma-4-26b-a4b-it
+LLM_API_KEY=<cloudflare api token>
+LLM_MAX_TOKENS=1000
+MAX_REWRITES=1
+PROMPT_STYLE=full
+```
+
+### Privacy
+
+The model only ever sees the placeholder names **MINU** and **PIP**. The child's real name
+(and pet's name) are typed in the browser and swapped in locally after the story is generated;
+they are never sent over the wire, never logged, and never appear in the rewrite loop.
 
 ## Word lists
 
-`data/levels/` ships empty. Fill the files (one word per line, whitespace separated, lowercase):
-
-`preprimer.txt`, `primer.txt`, `grade1.txt`, `grade2.txt`, `grade3.txt`, `nouns.txt`, `everyday.txt`
+The shipped lists in `data/levels/` come from the **public-domain Dolch word lists**
+(pre-primer, primer, grade 1-3, and the 95 Dolch nouns), plus a small `everyday.txt` list of
+common words a 5-10 year old meets outside school. Level 5 additionally includes the top
+1500 English words from the [`wordfreq`](https://pypi.org/project/wordfreq/) package, which
+is CC-BY-SA data computed from public corpora.
 
 ## Tests
 
@@ -58,19 +83,53 @@ Open http://127.0.0.1:8000
 pytest
 ```
 
-Word-list count tests fail until the real word lists are added.
-
 ## Evaluation
 
 Runs the last 4 topics in `data/topics.txt` across all 5 levels, saves a CSV and a grouped
 bar chart, and prints a summary table:
 
 ```bash
-python scripts/evaluate.py --label mymodel --n-per-level 10
+python scripts/evaluate.py --label gemma-cf --n-per-level 4
 # optional: --base-url, --model, --api-key-env (default LLM_API_KEY), --prompt-style
 ```
 
-Results land in `results/eval_<label>.csv` and `results/eval_<label>.png`.
+Results land in `results/eval_gemma-cf.csv` and `results/eval_gemma-cf.png`.
+
+The chart compares **first-try passes** with **passes after one rewrite** at each level -
+how often the checker approved the story immediately vs. after sending it back once.
+
+![Evaluation chart](results/eval_gemma-cf.png)
+
+Results from the run above (20 stories, `gemma-4-26b-a4b-it`, `PROMPT_STYLE=full`):
+first-try pass rates were 25-75% depending on level, but **after one rewrite every level
+reached 100%**, and the average in-list rate improved at every level. The checker + one
+rewrite reliably produces a story the child can actually read.
+
+## Optional: fine-tuned Tinker model
+
+As an experiment, the app can also run on a **fine-tuned Qwen3.5-4B** trained with
+[Tinker](https://tinker.thinkingmachines.dev):
+
+```bash
+python scripts/generate_dataset.py --target 100   # build data/train.jsonl
+python scripts/train_tinker.py                    # LoRA rank 32, ~50s for 1 epoch
+python scripts/evaluate.py --label tinker-short --n-per-level 4 \
+    --base-url "$TINKER_BASE_URL" --api-key-env TINKER_API_KEY \
+    --model "$(python -c "import json;print(json.load(open('results/tinker_checkpoints/latest.json'))['checkpoint'])")" \
+    --prompt-style short
+python scripts/compare_chart.py --label gemma-cf --label tinker-short
+```
+
+`scripts/train_tinker.py` trains on the 100 generated short-prompt stories (supervised
+cross-entropy on the assistant tokens only), then serves the checkpoint through Tinker's
+OpenAI-compatible endpoint, so `scripts/evaluate.py` and the app can talk to it unchanged.
+
+![Model comparison](results/eval_compare.png)
+
+On the same 20 stories the fine-tuned model reaches 100% after one rewrite at levels 2-5
+(75% at level 1), at ~2s per story with a short prompt. Gemma has the better first-try
+quality and the higher in-list rate; the fine-tuned 4B model is cheaper, faster, and was
+trained in under a minute - but it needs the checker's rewrite just as much.
 
 ## Deploy to Render
 
@@ -79,6 +138,7 @@ start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/health
 
 1. Push this repo to GitHub/GitLab.
 2. In Render: **New + > Blueprint**, pick the repo.
-3. Set the env vars `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, and `PROMPT_STYLE` when prompted.
+3. Set the env vars `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_MAX_TOKENS`,
+   `MAX_REWRITES`, and `PROMPT_STYLE` in the Render **dashboard** (not in the repo) when prompted.
 
 No database, no login, no extra frameworks.

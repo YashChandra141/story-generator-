@@ -24,6 +24,36 @@ def test_apply_names_swaps_placeholders_case_insensitive():
     )
 
 
+def test_fix_punctuation_capitalizes_after_full_stop():
+    assert llm._fix_punctuation("minu can run. the dog can run too.") == "Minu can run. The dog can run too."
+
+
+def test_fix_punctuation_adds_missing_terminal_mark():
+    assert llm._fix_punctuation("Minu can run\nthe dog can run") == "Minu can run.\nThe dog can run."
+
+
+def test_fix_punctuation_space_after_punctuation_and_standalone_i():
+    assert llm._fix_punctuation("Minu ran.and i ran too") == "Minu ran. And I ran too."
+    assert llm._fix_punctuation("Minu ran ,  pip ran .") == "Minu ran, pip ran."
+
+
+def test_fix_punctuation_question_mark_for_question_starters():
+    assert llm._fix_punctuation("can minu run", default_mark="?") == "Can minu run?"
+
+
+def test_fix_articles_agreement():
+    assert llm._fix_articles("Minu has a apple and an ball.") == "Minu has an apple and a ball."
+    assert llm._fix_articles("An kite flew. A owl sat.") == "A kite flew. An owl sat."
+    assert llm._fix_articles("A umbrella is big") == "An umbrella is big"
+
+
+def test_tense_mixed_detects_past_and_present():
+    assert llm._tense_mixed("Minu went to the park. Minu is happy.") is True
+    assert llm._tense_mixed("Minu went to the park. Moti went too.") is False
+    assert llm._tense_mixed("Minu is happy. Moti is little.") is False
+    assert llm._tense_mixed("The ball is red. It is on the grass.") is False
+
+
 def test_question_names_swapped_back(monkeypatch):
     captured = {}
 
