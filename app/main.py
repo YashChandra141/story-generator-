@@ -1,22 +1,34 @@
+import os
 import re
+import time
+from collections import defaultdict, deque
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
 from . import levels
 from .llm import LLMError, generate_questions, generate_story
-from .tts import TTSError, synthesize_speech
 
 load_dotenv()
 
-app = FastAPI(title="word-by-word")
+# Docs/redoc/openapi are disabled: the public site exposes only the app itself.
+app = FastAPI(title="word-by-word", docs_url=None, redoc_url=None, openapi_url=None)
+
+# CORS for the Next.js frontend (ui/). Comma-separated origins, e.g.
+# CORS_ORIGINS=https://word-by-word-ui.onrender.com
+_CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if _CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_CORS_ORIGINS,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-INDEX_FILE = Path(__file__).resolve().parent / "static" / "index.html"
 TOPICS_FILE = BASE_DIR / "data" / "topics.txt"
 
 _NAME_RE = re.compile(r"^[A-Za-z ]+$")
@@ -148,7 +160,8 @@ class QuestionsRequest(BaseModel):
 
 @app.get("/")
 def index():
-    return FileResponse(INDEX_FILE)
+    # API-only backend: status ping, the interface lives in the Next.js frontend
+    return {"app": "word-by-word", "ok": True, "up": "yes"}
 
 
 @app.get("/api/topics")
@@ -171,7 +184,8 @@ def placement(level: int):
 
 
 @app.post("/api/story")
-def story(req: StoryRequest):
+def story(req: StoryRequest, request: Request):
+    _reject_if_limited(request)
     level = req.level if req.level is not None else levels.infer_level(req.known_words)
     try:
         return generate_story(
@@ -187,7 +201,8 @@ def story(req: StoryRequest):
 
 
 @app.post("/api/questions")
-def questions(req: QuestionsRequest):
+def questions(req: QuestionsRequest, request: Request):
+    _reject_if_limited(request)
     level = req.level if req.level is not None else levels.infer_level(req.known_words)
     try:
         return generate_questions(
@@ -208,27 +223,34 @@ def health():
     return {"ok": True}
 
 
-class TTSRequest(BaseModel):
-    text: str
-
-    @field_validator("text")
-    @classmethod
-    def check_text(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("text must not be empty")
-        if len(v) > 6000:
-            raise ValueError("text must be at most 6000 characters")
-        return v
+# ---- simple per-IP rate limit on the paid endpoints (story/questions) ----
+try:
+    _RATE_LIMIT = max(1, int(os.getenv("RATE_LIMIT_PER_MIN", "20")))
+except ValueError:
+    _RATE_LIMIT = 20
+_hits: dict[str, deque] = defaultdict(deque)
 
 
-@app.post("/api/tts")
-def tts(req: TTSRequest):
-    try:
-        audio = synthesize_speech(req.text)
-    except TTSError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    return Response(content=audio, media_type="audio/mpeg")
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
-app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+def _rate_limited(request: Request) -> bool:
+    if len(_hits) > 5000:
+        _hits.clear()
+    now = time.monotonic()
+    hits = _hits[_client_ip(request)]
+    while hits and now - hits[0] > 60:
+        hits.popleft()
+    if len(hits) >= _RATE_LIMIT:
+        return True
+    hits.append(now)
+    return False
+
+
+def _reject_if_limited(request: Request) -> None:
+    if _rate_limited(request):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a minute and try again.")

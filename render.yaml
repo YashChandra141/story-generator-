@@ -20,3 +20,23 @@ services:
         sync: false
       - key: PROMPT_STYLE
         sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: RATE_LIMIT_PER_MIN
+        value: "20"
+
+  - type: web
+    name: word-by-word-ui
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # Paste the API service's public URL here after it deploys once,
+      # e.g. https://word-by-word-xxxx.onrender.com — the UI proxies /api/*
+      # to it, so no CORS configuration is needed.
+      - key: BACKEND_URL
+        sync: false

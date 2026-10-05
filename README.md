@@ -26,20 +26,51 @@ checker did not approve without a warning.
   message are sent back at a lower temperature (`MAX_REWRITES` tries, default 1). Thinking
   blocks are stripped from model output. Reading-comprehension questions are generated the
   same way and checked too.
-- **UI** (`app/static/index.html`) - one vanilla HTML/CSS/JS page with a placement check,
-  story writing, clickable words, stuck-word tracking, questions, and a print view.
+- **Frontend** (`frontend/` - Next.js 16 + TypeScript + Tailwind, runs with npm) - word-bank
+  placement, story writing, clickable words, stuck-word tracking, questions, browser
+  read-aloud, and a print view. It talks to the API through a same-origin `/api/*` proxy
+  (`frontend/next.config.ts`). The backend is API-only: `GET /` returns a JSON status ping.
 
 ## Run locally
+
+Two parts run together: the **API** (Python/FastAPI, folder root) and the **frontend**
+(Next.js/TypeScript, `frontend/` folder). In two separate terminals:
+
+**Terminal 1 - the API:**
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # Windows  (source .venv/bin/activate on macOS/Linux)
 pip install -r requirements.txt
 copy .env.example .env            # then edit .env with your model settings
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload     # serves http://127.0.0.1:8000
 ```
 
-Open http://127.0.0.1:8000
+**Terminal 2 - the frontend (Next.js):**
+
+```bash
+cd frontend
+npm install
+npm run dev                       -> serves http://localhost:3000
+```
+
+Open **http://localhost:3000** - that is the app. It reaches the API through the
+`/api/*` proxy in `frontend/next.config.ts`, which reads `BACKEND_URL`
+(default `http://127.0.0.1:8000`, so nothing else to configure).
+
+Useful commands:
+
+```bash
+.\dev.ps1                                    # ONE command: starts backend + frontend together
+.\dev.ps1 -Stop                              # stops both
+pytest                                       # run the checker/LLM tests (from the repo root)
+.venv\Scripts\python.exe scripts\stress_test.py   # 33-check stress test: endpoints, validation, secret leaks
+npm run build                                # production build of the frontend (from frontend/)
+python scripts/evaluate.py --label gemma-cf  # checker evaluation + chart (from the repo root)
+```
+
+The backend serves no interface: `GET /` and `GET /health` return a small JSON
+status (`{"ok": true}`) — the Next.js frontend in `frontend/` is the whole product.
 
 ### Configuration (`.env`)
 
@@ -65,9 +96,14 @@ PROMPT_STYLE=full
 
 ### Privacy
 
-The model only ever sees the placeholder names **MINU** and **PIP**. The child's real name
-(and pet's name) are typed in the browser and swapped in locally after the story is generated;
-they are never sent over the wire, never logged, and never appear in the rewrite loop.
+The story model only ever sees the placeholder names **MINU** and **PIP**. The child's real
+name (and pet's name) are typed in the browser and swapped in locally after the story is
+generated; they are never sent over the wire, never logged, and never appear in the rewrite loop.
+
+**Read aloud** uses the browser's built-in speech synthesis (`SpeechSynthesisUtterance`),
+so the audio is generated on the device itself: no audio API, no key, no network call, and
+the story - real names included - never leaves the computer. Tapping a single word speaks
+just that word the same way.
 
 ## Word lists
 
@@ -133,12 +169,19 @@ trained in under a minute - but it needs the checker's rewrite just as much.
 
 ## Deploy to Render
 
-The included `render.yaml` defines one Python web service (build: `pip install -r requirements.txt`,
-start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/health`).
+The included `render.yaml` defines **two** services:
+
+- `word-by-word` — the FastAPI API (Python, `uvicorn`, health check `/health`)
+- `word-by-word-ui` — this Next.js UI (Node, `npm run build && npm run start`)
 
 1. Push this repo to GitHub/GitLab.
 2. In Render: **New + > Blueprint**, pick the repo.
-3. Set the env vars `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_MAX_TOKENS`,
+3. On the API service set `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_MAX_TOKENS`,
    `MAX_REWRITES`, and `PROMPT_STYLE` in the Render **dashboard** (not in the repo) when prompted.
+4. After the API deploys, copy its public URL (e.g. `https://word-by-word-xxxx.onrender.com`)
+   and paste it as `BACKEND_URL` on the **UI** service, then redeploy the UI.
+5. Done: the browser talks only to the UI, and the UI proxies `/api/*` to the API server-side,
+   so no CORS configuration is needed. (`CORS_ORIGINS` on the API exists only if you later
+   call the API directly from another origin.)
 
 No database, no login, no extra frameworks.

@@ -4,3 +4,11 @@ logs/
 __pycache__/
 .pytest_cache/
 data/train*.jsonl
+
+# local run logs
+*.log
+
+# Next.js frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
